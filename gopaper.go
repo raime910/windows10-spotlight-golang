@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
-	"image"
+	"image/jpeg"
+	"io"
 	"log"
 	"os"
 	"os/user"
@@ -11,38 +11,69 @@ import (
 
 func main() {
 
-	var root = getAssetsFolder()
-	var allFiles = getFilePaths(root)
+	root := getAssetsFolder()
+	log.Printf("Scanning root folder (%s) for HD images", root)
 
-	// lets find 1080p images.
-	for _, filePath := range allFiles {
-		fmt.Println(filePath)
-		isHighResImage(filePath)
+	wallpapers := getHdWallpapers(root)
+	log.Printf("Found %d HD wallpapers within the root folder", len(wallpapers))
+
+	copySuccess := createCopies(wallpapers)
+
+	if copySuccess {
+		log.Println("Yay! new wallpapers!")
 	}
 }
 
-func isHighResImage(filePath string) bool {
+func createCopies(wallpapers []string) bool {
+	for _, wallpaper := range wallpapers {
+		// read file.
+		from, err := os.Open(wallpaper)
+
+		// check for errors.
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer from.Close()
+
+		fileName := filepath.Base(wallpaper)
+
+		to, err := os.OpenFile("./wallpapers/"+fileName+".jpeg", os.O_CREATE|os.O_RDWR, 0666)
+
+		// check for errors.
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer to.Close()
+
+		_, err = io.Copy(to, from)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	return true
+}
+
+func isHighResImage(path string) bool {
 	// read file.
-	file, err := os.Open(filePath)
+	file, err := os.Open(path)
 
 	// check for errors.
 	if err != nil {
-		log.Println("Failed to open the source file.")
 		log.Fatal(err)
 	}
 	defer file.Close()
 
-	image, _, err := image.Decode(file)
+	image, err := jpeg.Decode(file)
 
 	if err != nil {
-		log.Println("Failed to decode the file.")
-		log.Fatal(err)
+		return false
 	}
 
 	bounds := image.Bounds()
-	fmt.Printf("%s is %dx%d", file.Name(), bounds.Max.X, bounds.Max.Y)
+	isHD := bounds.Max.X >= 1920
 
-	return false
+	return isHD
 }
 
 func getAssetsFolder() string {
@@ -58,7 +89,7 @@ func getAssetsFolder() string {
 	return root
 }
 
-func getFilePaths(root string) []string {
+func getHdWallpapers(root string) []string {
 	// start collecting the files within it.
 	var files []string
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
@@ -73,5 +104,13 @@ func getFilePaths(root string) []string {
 		log.Fatal(err)
 	}
 
-	return files
+	// lets find 1080p images.
+	var wallpapers []string
+	for _, path := range files {
+		if isHighResImage(path) {
+			wallpapers = append(wallpapers, path)
+		}
+	}
+
+	return wallpapers
 }
